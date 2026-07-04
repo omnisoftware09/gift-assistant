@@ -1,0 +1,45 @@
+tracing:
+  provider: langsmith
+  project: gift-assistant
+  endpoint: https://api.smith.langchain.com
+
+llm:
+  provider: openai       # openai | anthropic | ollama
+  model: gpt-4o-mini
+  temperature: 0.2
+  base_url: http://localhost:11434   # Ollama only
+
+embeddings:
+  provider: openai       # openai | ollama
+  model: text-embedding-3-small
+  base_url: http://localhost:11434   # Ollama only
+  chunk:
+    min_sentences: 1     # override: CHUNK_MIN_SENTENCES
+    max_sentences: 2     # override: CHUNK_MAX_SENTENCES
+
+chroma:
+  persist_dir: data/chroma
+  collection_profiles: recipient_profiles
+
+profile_import:
+  inbox_dir: data/profile_imports/inbox
+
+agents:
+  orchestrator:
+    pattern: router        # keyword router (no LLM)
+    tracing: true
+  profile_collector:
+    pattern: react         # LangGraph ReAct + rule-based fallback
+    tracing: true
+  gift_recommender:
+    pattern: langgraph     # LangGraph search→evaluate→rank (LLM candidates)
+    tracing: true
+  event_monitor:
+    pattern: rules         # no LLM — calendar API only
+    tracing: true
+  ecard_generator:
+    pattern: react
+    tracing: true
+  proactive_worker:
+    pattern: rules
+    tracing: true

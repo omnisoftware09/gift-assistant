@@ -1,0 +1,12 @@
+calendar:
+  provider: google
+  credentials_file: credentials.json
+  token_file: data/google_token.json
+  scope: calendar.readonly
+  oauth_port: 8080
+
+vector_db:
+  provider: none  # pinecone | chroma | pgvector
+
+product_search:
+  provider: none  # web | amazon

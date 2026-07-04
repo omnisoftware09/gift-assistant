@@ -1,0 +1,11 @@
+.env
+.env.example
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+credentials.json
+data/google_token.json
+data/
+data/chroma/

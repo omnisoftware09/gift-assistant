@@ -1,0 +1,32 @@
+orchestrator:
+  interface: slack
+  subagents:
+    - event_monitor
+    - profile_collector
+    - gift_recommender
+    - ecard_generator
+  tools:
+    - calendar.add_event
+
+event_monitor:
+  tools:
+    - calendar.read_events
+  notify_via: slack
+
+profile_collector:
+  tools:
+    - vector_db.upsert_profile
+
+gift_recommender:
+  tools:
+    - vector_db.query_profiles
+    - product_search.web_search
+  skills:
+    - search
+    - evaluate
+    - rank
+  response_format: slack_blocks
+
+ecard_generator:
+  tools: []
+  response_format: slack_blocks

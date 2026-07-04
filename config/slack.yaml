@@ -1,0 +1,13 @@
+slack:
+  entry_modes:
+    - dm
+    - app_mention
+  proactive_notifications: false
+
+commands:
+  - name: gift
+    description: Get gift recommendations for someone
+  - name: events
+    description: Show upcoming events from calendar
+  - name: check-alerts
+    description: Manually check for approaching event alerts
