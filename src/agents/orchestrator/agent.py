@@ -1,18 +1,31 @@
 """Gift Assistant orchestrator — routes Slack messages to sub-agents."""
 
+import logging
+import re
+
+from src.agents.orchestrator.gift_flow import handle_active_gift_session, start_gift_session
 from src.agents.orchestrator.parser import parse_gift_request
 from src.agents.orchestrator.router import detect_intent
+from src.agents.orchestrator.tools import load_recipient_context, set_recipient_age_range
 from src.agents.subagents.event_monitor.agent import handle_event_query
 from src.agents.subagents.event_monitor.parser import is_event_query
 from src.agents.subagents.ecard_generator.agent import handle_ecard_request
 from src.agents.subagents.ecard_generator.parser import is_ecard_request
-from src.agents.subagents.gift_recommender.agent import handle_gift_request
 from src.agents.subagents.profile_collector.agent import handle_profile_message
 from src.agents.subagents.profile_collector.import_handler import is_profile_import_command
 from src.agents.subagents.profile_collector.parser import is_profile_message
 from src.interfaces.slack.formatters.responses import welcome_blocks
 from src.langchain_core.observability import trace_agent
 from src.shared.conversation_context import AgentResponse, SlackContext
+from src.shared.gift_session_store import get_gift_session_store
+
+logger = logging.getLogger("gift_assistant.orchestrator")
+
+AGE_RANGE_PATTERN = re.compile(
+    r"(?P<name>[A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(?:is\s+)?age(?:\s+range)?\s+"
+    r"(?P<range>\d{1,2}\s*-\s*\d{1,2})",
+    re.IGNORECASE,
+)
 
 
 @trace_agent("orchestrator")
@@ -33,9 +46,30 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
             blocks=welcome_blocks(),
         )
 
+    # Active gift refinement loop takes priority
+    session = get_gift_session_store().get(context.user_id)
+    if session:
+        return handle_active_gift_session(message, session, context)
+
+    age_match = AGE_RANGE_PATTERN.search(message)
+    if age_match:
+        name = " ".join(age_match.group("name").split()).title()
+        age_range = age_match.group("range").replace(" ", "")
+        set_recipient_age_range.invoke({"recipient": name, "age_range": age_range})
+        return AgentResponse(
+            text=f"Set age range for *{name}* to *{age_range}*. I'll use this for gift ideas."
+        )
+
     gift_request = parse_gift_request(message)
     if gift_request:
-        return handle_gift_request(gift_request)
+        recipient_ctx = load_recipient_context(gift_request.recipient)
+        logger.info(
+            "Orchestrator loaded gift context via tool recipient=%s age_range=%s past_gifts=%d",
+            recipient_ctx.name,
+            recipient_ctx.age_range,
+            len(recipient_ctx.past_gifts),
+        )
+        return start_gift_session(gift_request, context, recipient_ctx)
 
     if is_event_query(message) or detect_intent(message) == "event":
         return handle_event_query(message)
@@ -65,7 +99,8 @@ def handle_slash_command(
             )
         gift_request = parse_gift_request(query, from_slash_command=True)
         if gift_request:
-            return handle_gift_request(gift_request)
+            recipient_ctx = load_recipient_context(gift_request.recipient)
+            return start_gift_session(gift_request, context, recipient_ctx)
         return AgentResponse(
             text=f'Could not parse `/gift {query}`. Try `/gift Sarah graduation`.'
         )

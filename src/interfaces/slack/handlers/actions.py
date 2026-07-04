@@ -2,7 +2,8 @@ import json
 
 from slack_bolt import App
 
-from src.agents.subagents.gift_recommender.agent import handle_gift_request
+from src.agents.orchestrator.gift_flow import start_gift_session
+from src.agents.orchestrator.tools import load_recipient_context
 from src.interfaces.slack.formatters.responses import format_response
 from src.shared.notification_store import NotificationStore
 from src.storage.models.gift_request import GiftRequest
@@ -20,7 +21,16 @@ def register_action_handlers(app: App) -> None:
                 recipient=payload["recipient"],
                 occasion=payload.get("occasion"),
             )
-            response = handle_gift_request(request)
+            user_id = body["user"]["id"]
+            from src.shared.conversation_context import SlackContext
+
+            context = SlackContext(
+                user_id=user_id,
+                channel_id=body["channel"]["id"],
+                thread_ts=body["message"]["ts"],
+            )
+            recipient_ctx = load_recipient_context(request.recipient)
+            response = start_gift_session(request, context, recipient_ctx)
             _post_in_thread(client, body, **format_response(response))
         except Exception:
             logger.exception("proactive_gift_search failed")

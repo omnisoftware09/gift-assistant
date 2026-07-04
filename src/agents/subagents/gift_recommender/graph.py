@@ -32,11 +32,25 @@ class GiftGraphState(TypedDict):
     recipient: str
     occasion: str | None
     profile_chunks: list[str]
+    age_range: str | None
+    past_gifts_summary: str
+    excluded_categories: list[str]
+    feedback: str | None
+    iteration: int
     search_results: list[dict]
     evaluated: list[dict]
     ranked: list[dict]
     status: str
     error: str
+
+
+def _prompt_kwargs(state: GiftGraphState) -> dict:
+    return {
+        "age_range": state.get("age_range"),
+        "past_gifts_summary": state.get("past_gifts_summary") or "",
+        "excluded_categories": state.get("excluded_categories") or [],
+        "feedback": state.get("feedback"),
+    }
 
 
 def _llm_json(prompt: str, *, node: str) -> list[dict]:
@@ -71,16 +85,25 @@ def search_node(state: GiftGraphState) -> dict:
     profile_chunks = state.get("profile_chunks") or []
 
     logger.info(
-        "Gift search starting source=LLM recipient=%s occasion=%r profile_chunks=%d",
+        "Gift search starting source=LLM recipient=%s occasion=%r iteration=%d profile_chunks=%d",
         recipient,
         occasion,
+        state.get("iteration", 1),
         len(profile_chunks),
     )
-    for i, chunk in enumerate(profile_chunks):
-        logger.info("Gift search profile context [%d]=%r", i, chunk[:120])
+    if state.get("feedback"):
+        logger.info("Gift search user feedback=%r", state.get("feedback")[:200])
+    if state.get("excluded_categories"):
+        logger.info(
+            "Gift search excluded categories=%s",
+            state.get("excluded_categories"),
+        )
 
     try:
-        raw = _llm_json(search_prompt(recipient, occasion, profile_chunks), node="search")
+        raw = _llm_json(
+            search_prompt(recipient, occasion, profile_chunks, **_prompt_kwargs(state)),
+            node="search",
+        )
         candidates = normalize_candidates(raw)
         if not candidates:
             candidates = fallback_candidates(recipient, occasion)
@@ -124,7 +147,9 @@ def evaluate_node(state: GiftGraphState) -> dict:
 
     try:
         scored = _llm_json(
-            evaluate_prompt(recipient, occasion, profile_chunks, candidates),
+            evaluate_prompt(
+                recipient, occasion, profile_chunks, candidates, **_prompt_kwargs(state)
+            ),
             node="evaluate",
         )
         evaluated = apply_ratings(candidates, scored)
@@ -237,11 +262,20 @@ def get_gift_recommender_graph():
     return _graph
 
 
-def run_gift_pipeline(request: GiftRequest, profile_chunks: list[str]) -> GiftGraphState:
+def run_gift_pipeline(
+    request: GiftRequest,
+    profile_chunks: list[str],
+    *,
+    age_range: str | None = None,
+    past_gifts_summary: str = "",
+    excluded_categories: list[str] | None = None,
+    feedback: str | None = None,
+    iteration: int = 1,
+) -> GiftGraphState:
     """Run search → evaluate → rank."""
     logger.info(
-        "Gift pipeline pattern=LangGraph-linear (not ReAct) — "
-        "nodes: search(single-shot LLM) → evaluate(single-shot LLM+embeddings) → rank(deterministic)"
+        "Gift pipeline iteration=%d pattern=LangGraph-linear (not ReAct)",
+        iteration,
     )
     graph = get_gift_recommender_graph()
     return graph.invoke(
@@ -249,6 +283,11 @@ def run_gift_pipeline(request: GiftRequest, profile_chunks: list[str]) -> GiftGr
             "recipient": request.recipient,
             "occasion": request.occasion,
             "profile_chunks": profile_chunks,
+            "age_range": age_range,
+            "past_gifts_summary": past_gifts_summary,
+            "excluded_categories": excluded_categories or [],
+            "feedback": feedback,
+            "iteration": iteration,
             "search_results": [],
             "evaluated": [],
             "ranked": [],
