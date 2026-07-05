@@ -94,10 +94,15 @@ def _fallback_models(primary: str) -> list[str]:
 
 
 def is_dalle_enabled() -> bool:
+    """True when OpenAI GPT Image backgrounds are active (provider=openai + API key)."""
     settings = get_ecard_image_settings()
-    if not settings["enabled"]:
+    if settings["provider"] != "openai":
         return False
     return bool(os.getenv("OPENAI_API_KEY", "").strip())
+
+
+def get_background_provider() -> str:
+    return get_ecard_image_settings()["provider"]
 
 
 def _cache_key(
@@ -106,6 +111,7 @@ def _cache_key(
     recipient: str,
     visual_hints: list[str],
     iteration: int,
+    design_feedback: list[str] | None = None,
 ) -> str:
     raw = "|".join(
         [
@@ -113,6 +119,7 @@ def _cache_key(
             occasion or "",
             recipient,
             ",".join(sorted(visual_hints)),
+            ",".join(sorted(design_feedback or [])),
             str(iteration),
         ]
     )
@@ -125,16 +132,21 @@ def build_background_prompt(
     recipient: str,
     occasion: str | None = None,
     visual_hints: list[str] | None = None,
+    design_feedback: list[str] | None = None,
 ) -> str:
     base = STYLE_PROMPTS.get(style, STYLE_PROMPTS["heartfelt"])
     occasion_line = (occasion or "celebration").replace("her ", "").replace("his ", "")
-    hint_line = ""
+    extras: list[str] = []
     if visual_hints:
-        hint_line = f" Visual preferences: {', '.join(visual_hints)}."
+        extras.append(f"Visual preferences: {', '.join(visual_hints)}.")
+    if design_feedback:
+        extras.append(f"Required visual elements: {'; '.join(design_feedback)}.")
+    extra_line = " ".join(extras)
     return (
         f"Vertical portrait greeting card background for {occasion_line} "
-        f"for someone named {recipient}. {base}.{hint_line} "
-        "No text, no letters, no words, no watermark, no faces, no logos. "
+        f"for someone named {recipient}. {base}. {extra_line} "
+        "Illustrated or cartoon characters are OK when requested. "
+        "No text, no letters, no words, no watermark, no logos. "
         "Soft artistic illustration suitable for overlaying a message."
     )
 
@@ -173,6 +185,7 @@ def generate_background_image(
     recipient: str,
     occasion: str | None = None,
     visual_hints: list[str] | None = None,
+    design_feedback: list[str] | None = None,
 ) -> Image.Image | None:
     if not is_dalle_enabled():
         return None
@@ -183,6 +196,7 @@ def generate_background_image(
         recipient=recipient,
         occasion=occasion,
         visual_hints=visual_hints,
+        design_feedback=design_feedback,
     )
 
     try:
@@ -292,6 +306,39 @@ def generate_backgrounds_for_variants(
                 paths[style] = path
 
     return paths
+
+
+def generate_background_for_style(
+    style: str,
+    *,
+    user_id: str,
+    recipient: str,
+    occasion: str | None,
+    visual_hints: list[str],
+    design_feedback: list[str],
+    iteration: int,
+    force_refresh: bool = True,
+) -> str | None:
+    """Generate one background for the selected design during refinement."""
+    if not is_dalle_enabled():
+        return None
+
+    key = _cache_key(style, occasion, recipient, visual_hints, iteration, design_feedback)
+    path = _background_path(user_id, style, key)
+    if path.exists() and not force_refresh:
+        return str(path)
+
+    img = generate_background_image(
+        style,
+        recipient=recipient,
+        occasion=occasion,
+        visual_hints=visual_hints,
+        design_feedback=design_feedback,
+    )
+    if img is None:
+        return None
+    img.save(path, format="PNG")
+    return str(path)
 
 
 def backgrounds_as_images(paths: dict[str, str]) -> dict[str, Image.Image]:

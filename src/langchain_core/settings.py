@@ -61,11 +61,37 @@ def get_profile_import_settings() -> dict:
 
 def get_ecard_image_settings() -> dict:
     cfg = load_settings().get("ecard_images", {})
-    enabled_raw = os.getenv("ECARD_DALLE_ENABLED", cfg.get("enabled", "true"))
-    enabled = str(enabled_raw).lower() in ("1", "true", "yes", "on")
+
+    provider = _resolve_ecard_background_provider(cfg)
+
     return {
-        "enabled": enabled,
+        "provider": provider,
+        "enabled": provider == "openai",
         "model": os.getenv("ECARD_DALLE_MODEL", cfg.get("model", "gpt-image-1-mini")),
         "size": os.getenv("ECARD_DALLE_SIZE", cfg.get("size", "1024x1536")),
         "quality": os.getenv("ECARD_DALLE_QUALITY", cfg.get("quality", "medium")),
     }
+
+
+def _resolve_ecard_background_provider(cfg: dict) -> str:
+    """pillow = local Pillow gradients (default). openai = GPT Image API."""
+    explicit = os.getenv("ECARD_BACKGROUND_PROVIDER", "").strip().lower()
+    if explicit:
+        if explicit in ("openai", "dalle", "gpt-image"):
+            return "openai"
+        return "pillow"
+
+    if "ECARD_DALLE_ENABLED" in os.environ:
+        raw = os.getenv("ECARD_DALLE_ENABLED", "")
+        return "openai" if str(raw).lower() in ("1", "true", "yes", "on") else "pillow"
+
+    yaml_provider = str(cfg.get("provider", "")).strip().lower()
+    if yaml_provider:
+        if yaml_provider in ("openai", "dalle", "gpt-image"):
+            return "openai"
+        return "pillow"
+
+    if "enabled" in cfg:
+        return "openai" if cfg.get("enabled") else "pillow"
+
+    return "pillow"

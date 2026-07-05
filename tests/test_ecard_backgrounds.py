@@ -11,9 +11,11 @@ from src.agents.subagents.ecard_generator.backgrounds import (
     _normalize_size,
     build_background_prompt,
     generate_backgrounds_for_variants,
+    get_background_provider,
     is_dalle_enabled,
     load_background,
 )
+from src.langchain_core.settings import get_ecard_image_settings
 from src.agents.subagents.ecard_generator.parsing import fallback_ecard_variants
 from src.agents.subagents.ecard_generator.render import render_card_jpeg
 
@@ -48,13 +50,45 @@ def test_build_background_prompt_no_text():
     assert "pink" in prompt
 
 
-@patch.dict("os.environ", {"OPENAI_API_KEY": "", "ECARD_DALLE_ENABLED": "false"})
-def test_dalle_disabled_without_key():
+def test_default_provider_is_pillow(monkeypatch):
+    monkeypatch.delenv("ECARD_BACKGROUND_PROVIDER", raising=False)
+    monkeypatch.delenv("ECARD_DALLE_ENABLED", raising=False)
+    from src.langchain_core.settings import load_settings
+
+    load_settings.cache_clear()
+    settings = get_ecard_image_settings()
+    assert settings["provider"] == "pillow"
+    assert settings["enabled"] is False
+
+
+def test_openai_provider_via_env(monkeypatch):
+    monkeypatch.setenv("ECARD_BACKGROUND_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    settings = get_ecard_image_settings()
+    assert settings["provider"] == "openai"
+    assert is_dalle_enabled() is True
+
+
+@patch.dict("os.environ", {"OPENAI_API_KEY": "", "ECARD_BACKGROUND_PROVIDER": "pillow"})
+def test_dalle_disabled_with_pillow_provider():
+    assert get_background_provider() == "pillow"
     assert is_dalle_enabled() is False
 
 
-@patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test", "ECARD_DALLE_ENABLED": "true"})
-def test_dalle_enabled_with_key():
+@patch.dict(
+    "os.environ",
+    {
+        "OPENAI_API_KEY": "sk-test",
+        "ECARD_DALLE_ENABLED": "true",
+    },
+    clear=False,
+)
+def test_legacy_dalle_enabled_flag(monkeypatch):
+    monkeypatch.delenv("ECARD_BACKGROUND_PROVIDER", raising=False)
+    from src.langchain_core.settings import load_settings
+
+    load_settings.cache_clear()
+    assert get_ecard_image_settings()["provider"] == "openai"
     assert is_dalle_enabled() is True
 
 
@@ -74,7 +108,7 @@ def test_render_with_photo_background(tmp_path):
 @patch("src.agents.subagents.ecard_generator.backgrounds.generate_background_image")
 def test_generate_backgrounds_caches(mock_gen, tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("ECARD_DALLE_ENABLED", "true")
+    monkeypatch.setenv("ECARD_BACKGROUND_PROVIDER", "openai")
     monkeypatch.setenv("ECARD_BACKGROUND_DIR", str(tmp_path))
 
     mock_gen.return_value = Image.new("RGB", (512, 512), (100, 150, 200))

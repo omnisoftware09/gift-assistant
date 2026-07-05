@@ -128,23 +128,46 @@ Uses Chroma profiles when available. Swap LLM via `LLM_PROVIDER` (openai / ollam
 
 ## eCard Generator
 
-Visual draft → refine → download loop with **DALL-E background art**:
+Visual **two-step** draft → refine → download loop:
 
-1. `create a greeting card for Mom for her birthday`
-2. Bot generates DALL-E backgrounds + text, attaches a **preview JPEG**
-3. Reply *1*, *2*, or *3* → full-size **GIF or JPEG** uploaded to Slack (tap to download → WhatsApp)
-4. Refine with feedback (e.g. *more pink*, *new background*, *floral*)
+1. `create a greeting card for Mom for her birthday` → 3 designs attached
+2. Reply *1*, *2*, or *3* to **select** a design
+3. **Step 2:** describe changes for that design
+4. Say *finalize* → downloadable GIF/JPEG uploaded to Slack for WhatsApp
 
-Requires **`OPENAI_API_KEY`**, Slack scope **`files:write`**. Set `ECARD_DALLE_ENABLED=false` to use gradient backgrounds only.
+### Background provider (swappable)
+
+| Provider | Config | Cost |
+|----------|--------|------|
+| **Pillow** (default) | `ECARD_BACKGROUND_PROVIDER=pillow` | Free — gradient/decorated backgrounds |
+| **OpenAI GPT Image** | `ECARD_BACKGROUND_PROVIDER=openai` | Per-image API cost |
 
 ```env
-ECARD_DALLE_ENABLED=true
-ECARD_DALLE_MODEL=gpt-image-1-mini   # or gpt-image-1, gpt-image-1.5, gpt-image-2
-ECARD_DALLE_SIZE=1024x1536
-ECARD_DALLE_QUALITY=medium           # low | medium | high
+# Default — free local backgrounds for testing
+ECARD_BACKGROUND_PROVIDER=pillow
+
+# Switch to AI-generated backgrounds (requires OPENAI_API_KEY)
+# ECARD_BACKGROUND_PROVIDER=openai
+# ECARD_DALLE_MODEL=gpt-image-1-mini
+# ECARD_DALLE_SIZE=1024x1536
+# ECARD_DALLE_QUALITY=medium
 ```
 
-Note: OpenAI retired `dall-e-3` in May 2026. Legacy `ECARD_DALLE_*` env vars now target GPT Image models.
+Legacy: `ECARD_DALLE_ENABLED=true|false` still works. Requires Slack scope **`files:write`**.
+
+### OpenAI quota exhausted?
+
+Pillow backgrounds avoid image API costs, but **card text** still uses `LLM_PROVIDER` and **profile lookup** uses `EMBEDDING_PROVIDER`. For fully local/free testing:
+
+```env
+ECARD_BACKGROUND_PROVIDER=pillow
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2
+EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Remove `ECARD_DALLE_ENABLED=true` from `.env` if set. Restart the bot after changes.
 
 ## Next steps
 

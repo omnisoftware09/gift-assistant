@@ -28,27 +28,54 @@ def extract_json_array(text: str) -> list[dict]:
     return [item for item in data if isinstance(item, dict)]
 
 
+def extract_json_object(text: str) -> dict | None:
+    if not text or not text.strip():
+        return None
+
+    cleaned = text.strip()
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL | re.IGNORECASE)
+    if fence:
+        cleaned = fence.group(1)
+    else:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            cleaned = cleaned[start : end + 1]
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
+
+    return data if isinstance(data, dict) else None
+
+
+def normalize_ecard_variant(item: dict, *, default_style: str = "heartfelt") -> dict | None:
+    style = str(item.get("style") or default_style).strip().lower()
+    headline = str(item.get("headline") or "").strip()
+    message = str(item.get("message") or "").strip()
+    sign_off = str(item.get("sign_off") or "Best wishes,").strip()
+    if not headline or not message:
+        return None
+    return {
+        "style": style,
+        "headline": headline,
+        "message": message,
+        "sign_off": sign_off,
+    }
+
+
 def normalize_ecard_variants(raw: list[dict]) -> list[dict]:
     styles_seen: set[str] = set()
     variants: list[dict] = []
     for item in raw:
-        style = str(item.get("style") or "heartfelt").strip().lower()
-        headline = str(item.get("headline") or "").strip()
-        message = str(item.get("message") or "").strip()
-        sign_off = str(item.get("sign_off") or "Best wishes,").strip()
-        if not headline or not message:
+        normalized = normalize_ecard_variant(item)
+        if not normalized:
             continue
-        if style in styles_seen:
+        if normalized["style"] in styles_seen:
             continue
-        styles_seen.add(style)
-        variants.append(
-            {
-                "style": style,
-                "headline": headline,
-                "message": message,
-                "sign_off": sign_off,
-            }
-        )
+        styles_seen.add(normalized["style"])
+        variants.append(normalized)
     return variants
 
 

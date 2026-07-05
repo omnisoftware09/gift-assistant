@@ -45,6 +45,22 @@ IDEAS_FOR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# "gift for Sarah for her birthday but something trendy"
+GIFT_FOR_PRONOUN_OCCASION = re.compile(
+    r"(?:gift|present)s?\s+for\s+(?P<recipient>[A-Za-z]+(?:\s+[A-Za-z]+)?)"
+    r"\s+for\s+(?:her|his|their)\s+"
+    r"(?P<occasion>birthday|graduation|anniversary|wedding|retirement|christmas|"
+    r"thanksgiving|promotion|housewarming)\b",
+    re.IGNORECASE,
+)
+
+# "gift for Sarah birthday ..." with trailing feedback
+GIFT_FOR_RECIPIENT_OCCASION = re.compile(
+    r"(?:gift|present)s?\s+for\s+(?P<recipient>[A-Za-z]+)"
+    r"\s+(?P<occasion>birthday|graduation|anniversary|wedding|retirement|christmas)\b",
+    re.IGNORECASE,
+)
+
 OCCASIONS = {
     "birthday",
     "graduation",
@@ -73,6 +89,22 @@ def parse_gift_request(text: str, *, from_slash_command: bool = False) -> GiftRe
 
     if not is_gift_request(message):
         return None
+
+    pronoun_occasion = GIFT_FOR_PRONOUN_OCCASION.search(message)
+    if pronoun_occasion:
+        return GiftRequest(
+            recipient=_clean_name(pronoun_occasion.group("recipient")),
+            occasion=_clean_occasion(pronoun_occasion.group("occasion")),
+            raw_message=message,
+        )
+
+    recipient_occasion = GIFT_FOR_RECIPIENT_OCCASION.search(message)
+    if recipient_occasion:
+        return GiftRequest(
+            recipient=_clean_name(recipient_occasion.group("recipient")),
+            occasion=_clean_occasion(recipient_occasion.group("occasion")),
+            raw_message=message,
+        )
 
     possessive = POSSESSIVE_PATTERN.search(message)
     if possessive:

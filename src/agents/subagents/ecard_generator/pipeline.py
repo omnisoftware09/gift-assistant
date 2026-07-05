@@ -18,6 +18,11 @@ from src.storage.models.recipient_context import RecipientContext
 logger = logging.getLogger("gift_assistant.ecard_generator")
 
 
+def _is_openai_quota_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "insufficient_quota" in text or "rate limit" in text or type(exc).__name__ == "RateLimitError"
+
+
 def _past_ecards_summary(ecards) -> str:
     if not ecards:
         return "No past eCards recorded."
@@ -82,6 +87,62 @@ def draft_ecard_variants(
                 if len(variants) >= 3:
                     break
         return variants[:3]
-    except Exception:
-        logger.exception("eCard draft failed recipient=%s", request.recipient)
+    except Exception as exc:
+        if _is_openai_quota_error(exc):
+            logger.warning(
+                "eCard draft: OpenAI quota exceeded — using template card text. "
+                "Set LLM_PROVIDER=ollama in .env for free local LLM."
+            )
+        else:
+            logger.exception("eCard draft failed recipient=%s", request.recipient)
         return fallback_ecard_variants(request.recipient, request.occasion)
+
+
+@trace_agent("ecard_generator.refine")
+def refine_ecard_variant(
+    card: dict,
+    request: EcardRequest,
+    profile_chunks: list[str],
+    *,
+    feedback: str,
+    prior_feedback: list[str] | None = None,
+) -> dict:
+    """Refine a single selected card based on user feedback."""
+    from src.agents.subagents.ecard_generator.parsing import extract_json_object, normalize_ecard_variant
+    from src.agents.subagents.ecard_generator.prompts import refine_ecard_prompt
+
+    prompt = refine_ecard_prompt(
+        card,
+        request.recipient,
+        request.occasion,
+        profile_chunks,
+        feedback=feedback,
+        prior_feedback=prior_feedback,
+    )
+
+    try:
+        model = get_chat_model(temperature=0.3)
+        response = model.invoke(
+            [
+                SystemMessage(content="You return only valid JSON objects. No markdown."),
+                HumanMessage(content=prompt),
+            ]
+        )
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(
+                block.get("text", "") if isinstance(block, dict) else str(block)
+                for block in content
+            )
+        raw = extract_json_object(str(content))
+        if raw:
+            refined = normalize_ecard_variant(raw, default_style=card.get("style", "heartfelt"))
+            if refined:
+                return refined
+    except Exception as exc:
+        if _is_openai_quota_error(exc):
+            logger.warning("eCard refine: OpenAI quota exceeded — keeping previous card text")
+        else:
+            logger.exception("eCard refine failed recipient=%s", request.recipient)
+
+    return dict(card)

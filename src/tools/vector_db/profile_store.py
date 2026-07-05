@@ -69,6 +69,33 @@ class ProfileStore:
         self._store.add_documents(docs)
         return len(docs)
 
+    @trace_tool("chroma.list_profile")
+    def list_profile_chunks(self, recipient: str, *, limit: int = 10) -> list[str]:
+        """
+        Return stored profile chunks for a recipient — no embedding API call.
+
+        Embeddings are computed once at ingest (save_profile). Use this when the
+        recipient is already known (eCards, profile display). Use query_profile
+        for semantic ranking (e.g. gift search).
+        """
+        name = recipient.strip().lower()
+        collection = self._store._collection
+        batch = collection.get(where={"recipient": name}, limit=limit)
+        documents = batch.get("documents") or []
+        metadatas = batch.get("metadatas") or []
+
+        if not documents:
+            logger.info("ChromaDB list recipient=%s returned 0 chunks", name)
+            return []
+
+        # Sort by chunk_index when present for stable ordering
+        pairs = list(zip(documents, metadatas, strict=False))
+        pairs.sort(key=lambda p: p[1].get("chunk_index", 0) if isinstance(p[1], dict) else 0)
+
+        chunks = [doc for doc, _ in pairs if doc]
+        logger.info("ChromaDB list recipient=%s returned %d chunk(s) (no query embed)", name, len(chunks))
+        return chunks
+
     @trace_tool("chroma.query_profile")
     def query_profile(self, recipient: str, query: str | None = None, k: int = 5) -> list[str]:
         """Return relevant profile chunks for a recipient."""

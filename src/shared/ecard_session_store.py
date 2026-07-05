@@ -12,11 +12,17 @@ class EcardSession:
     user_id: str
     recipient: str
     occasion: str | None = None
+    phase: str = "pick"  # pick | refine
+    selected_index: int | None = None
+    selected_card: dict | None = None
+    design_feedback: list[str] = field(default_factory=list)
     feedback: list[str] = field(default_factory=list)
     visual_hints: list[str] = field(default_factory=list)
     backgrounds: dict[str, str] = field(default_factory=dict)
+    selected_background: str | None = None
     last_variants: list[dict] = field(default_factory=list)
     iteration: int = 1
+    refine_round: int = 0
 
 
 class EcardSessionStore:
@@ -33,13 +39,19 @@ class EcardSessionStore:
     def _save(self) -> None:
         self.path.write_text(json.dumps(self._data, indent=2))
 
+    def _hydrate(self, raw: dict) -> EcardSession:
+        raw.setdefault("visual_hints", [])
+        raw.setdefault("backgrounds", {})
+        raw.setdefault("design_feedback", [])
+        raw.setdefault("phase", "pick")
+        raw.setdefault("refine_round", 0)
+        return EcardSession(**raw)
+
     def get(self, user_id: str) -> EcardSession | None:
         raw = self._data.get(user_id)
         if not raw:
             return None
-        raw.setdefault("visual_hints", [])
-        raw.setdefault("backgrounds", {})
-        return EcardSession(**raw)
+        return self._hydrate(raw)
 
     def start(
         self,
@@ -54,6 +66,7 @@ class EcardSessionStore:
             user_id=user_id,
             recipient=recipient,
             occasion=occasion,
+            phase="pick",
             last_variants=last_variants,
             iteration=1,
             visual_hints=list(visual_hints or []),
@@ -63,24 +76,62 @@ class EcardSessionStore:
         self._save()
         return session
 
-    def update_after_iteration(
+    def select_design(
         self,
         user_id: str,
-        feedback: str,
-        last_variants: list[dict],
-        visual_hints: list[str] | None = None,
-        backgrounds: dict[str, str] | None = None,
+        index: int,
+        card: dict,
+        *,
+        initial_feedback: str | None = None,
+        background_path: str | None = None,
     ) -> EcardSession | None:
         session = self.get(user_id)
         if not session:
             return None
-        session.feedback.append(feedback)
-        session.last_variants = last_variants
-        session.iteration += 1
+        session.phase = "refine"
+        session.selected_index = index
+        session.selected_card = dict(card)
+        session.refine_round = 0
+        session.selected_background = background_path
+        if initial_feedback:
+            session.design_feedback.append(initial_feedback)
+        self._data[user_id] = asdict(session)
+        self._save()
+        return session
+
+    def update_after_refinement(
+        self,
+        user_id: str,
+        feedback: str,
+        card: dict,
+        *,
+        background_path: str | None = None,
+        visual_hints: list[str] | None = None,
+    ) -> EcardSession | None:
+        session = self.get(user_id)
+        if not session:
+            return None
+        session.design_feedback.append(feedback)
+        session.selected_card = dict(card)
+        session.refine_round += 1
+        if background_path:
+            session.selected_background = background_path
         if visual_hints is not None:
             session.visual_hints = visual_hints
-        if backgrounds is not None:
-            session.backgrounds = backgrounds
+        self._data[user_id] = asdict(session)
+        self._save()
+        return session
+
+    def return_to_pick(self, user_id: str) -> EcardSession | None:
+        session = self.get(user_id)
+        if not session:
+            return None
+        session.phase = "pick"
+        session.selected_index = None
+        session.selected_card = None
+        session.selected_background = None
+        session.design_feedback = []
+        session.refine_round = 0
         self._data[user_id] = asdict(session)
         self._save()
         return session

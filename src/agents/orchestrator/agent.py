@@ -28,12 +28,13 @@ AGE_RANGE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+GREETING_PATTERN = re.compile(r"\b(hello|hi|hey|help)\b", re.IGNORECASE)
+
 
 @trace_agent("orchestrator")
 def handle_message(text: str, context: SlackContext) -> AgentResponse:
     """Process a user message and return a response for Slack."""
     message = text.strip()
-    lower = message.lower()
 
     if not message:
         return AgentResponse(
@@ -41,13 +42,7 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
             blocks=welcome_blocks(),
         )
 
-    if any(word in lower for word in ("hello", "hi", "hey", "help")):
-        return AgentResponse(
-            text="Hello! I'm your Gift Assistant.",
-            blocks=welcome_blocks(),
-        )
-
-    # Active gift refinement loop takes priority
+    # Active sessions before greeting detection ("something" contains "hi")
     session = get_gift_session_store().get(context.user_id)
     if session:
         return handle_active_gift_session(message, session, context)
@@ -55,6 +50,12 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
     ecard_session = get_ecard_session_store().get(context.user_id)
     if ecard_session:
         return handle_active_ecard_session(message, ecard_session, context)
+
+    if GREETING_PATTERN.search(message):
+        return AgentResponse(
+            text="Hello! I'm your Gift Assistant.",
+            blocks=welcome_blocks(),
+        )
 
     age_match = AGE_RANGE_PATTERN.search(message)
     if age_match:
