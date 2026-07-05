@@ -28,7 +28,15 @@ class EventQuery:
 
 
 def is_event_query(text: str) -> bool:
-    return bool(EVENT_TRIGGER.search(text))
+    if not EVENT_TRIGGER.search(text):
+        return False
+    # Occasion words in gift/ecard requests are not calendar queries
+    from src.agents.orchestrator.parser import is_gift_request
+    from src.agents.subagents.ecard_generator.parser import is_ecard_request
+
+    if is_ecard_request(text) or is_gift_request(text):
+        return False
+    return True
 
 
 def parse_event_query(text: str) -> EventQuery:

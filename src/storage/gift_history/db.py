@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-DEFAULT_DB = os.getenv("GIFT_HISTORY_DB", "data/gift_history.db")
+DEFAULT_DB = "data/gift_history.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS recipients (
@@ -27,11 +27,25 @@ CREATE TABLE IF NOT EXISTS gift_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_gift_history_recipient ON gift_history(recipient_id);
+
+CREATE TABLE IF NOT EXISTS ecards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_id INTEGER NOT NULL,
+    style TEXT NOT NULL DEFAULT 'heartfelt',
+    headline TEXT NOT NULL,
+    message TEXT NOT NULL,
+    sign_off TEXT,
+    occasion TEXT,
+    selected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (recipient_id) REFERENCES recipients(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ecards_recipient ON ecards(recipient_id);
 """
 
 
 def get_db_path() -> Path:
-    path = Path(DEFAULT_DB)
+    path = Path(os.getenv("GIFT_HISTORY_DB", DEFAULT_DB))
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 

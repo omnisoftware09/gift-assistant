@@ -24,6 +24,12 @@ chroma:
 profile_import:
   inbox_dir: data/profile_imports/inbox
 
+ecard_images:
+  enabled: true
+  model: gpt-image-1-mini   # gpt-image-2 | gpt-image-1.5 | gpt-image-1 | gpt-image-1-mini
+  size: "1024x1536"         # portrait; dall-e sizes auto-mapped
+  quality: medium            # low | medium | high | auto  (standard/hd also accepted)
+
 agents:
   orchestrator:
     pattern: router        # keyword router (no LLM)

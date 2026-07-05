@@ -68,7 +68,7 @@ python scripts/auth_google_calendar.py
 5. Slash commands: `/gift Mom birthday`
 6. **Profile import:** `python scripts/import_profiles.py` then `What does Sarah like?`
 7. **Slack import:** DM `import profiles` or `/import-profiles`
-8. **eCard stub:** `create a greeting card for Mom for her birthday`
+8. **eCard:** `create a greeting card for Mom for her birthday` or `/ecard Mom birthday`
 
 ## Project structure
 
@@ -126,8 +126,27 @@ LangGraph pipeline: **search** (LLM gift ideas) → **evaluate** (score vs profi
 
 Uses Chroma profiles when available. Swap LLM via `LLM_PROVIDER` (openai / ollama / anthropic).
 
+## eCard Generator
+
+Visual draft → refine → download loop with **DALL-E background art**:
+
+1. `create a greeting card for Mom for her birthday`
+2. Bot generates DALL-E backgrounds + text, attaches a **preview JPEG**
+3. Reply *1*, *2*, or *3* → full-size **GIF or JPEG** uploaded to Slack (tap to download → WhatsApp)
+4. Refine with feedback (e.g. *more pink*, *new background*, *floral*)
+
+Requires **`OPENAI_API_KEY`**, Slack scope **`files:write`**. Set `ECARD_DALLE_ENABLED=false` to use gradient backgrounds only.
+
+```env
+ECARD_DALLE_ENABLED=true
+ECARD_DALLE_MODEL=gpt-image-1-mini   # or gpt-image-1, gpt-image-1.5, gpt-image-2
+ECARD_DALLE_SIZE=1024x1536
+ECARD_DALLE_QUALITY=medium           # low | medium | high
+```
+
+Note: OpenAI retired `dall-e-3` in May 2026. Legacy `ECARD_DALLE_*` env vars now target GPT Image models.
+
 ## Next steps
 
 - Product/web search API in the search node (optional)
-- eCard Generator — real ReAct + generation (stub in place)
 

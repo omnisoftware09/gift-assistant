@@ -24,7 +24,7 @@ def welcome_blocks() -> list:
                     "• *Gift ideas* — `/gift Mom birthday`\n"
                     "• *Upcoming events* — `/events`\n"
                     "• *Recipient profiles* — tell me what someone likes\n"
-                    "• *eCards* — ask me to create a greeting card"
+                    "• *eCards* — visual greeting cards you can download for WhatsApp"
                 ),
             },
         },

@@ -1,6 +1,7 @@
 from slack_bolt import App
 
 from src.agents.orchestrator.agent import handle_slash_command
+from src.interfaces.slack.file_upload import deliver_response
 from src.interfaces.slack.formatters.responses import format_response
 from src.shared.conversation_context import SlackContext
 
@@ -29,6 +30,21 @@ def register_slash_commands(app: App) -> None:
         except Exception:
             logger.exception("Failed to handle /events")
             respond(text="Sorry, something went wrong with /events.")
+
+    @app.command("/ecard")
+    def ecard_command(ack, command, respond, client, logger):
+        ack()
+        context = _context_from_command(command)
+        query = command.get("text", "").strip()
+        try:
+            response = handle_slash_command("ecard", query, context)
+            if response.files:
+                deliver_response(client, context.channel_id, response)
+            else:
+                respond(**format_response(response))
+        except Exception:
+            logger.exception("Failed to handle /ecard")
+            respond(text="Sorry, something went wrong with /ecard.")
 
     @app.command("/check-alerts")
     def check_alerts_command(ack, command, respond, logger):

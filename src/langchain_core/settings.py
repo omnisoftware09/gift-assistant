@@ -57,3 +57,15 @@ def get_profile_import_settings() -> dict:
             "PROFILE_IMPORT_DIR", cfg.get("inbox_dir", "data/profile_imports/inbox")
         ),
     }
+
+
+def get_ecard_image_settings() -> dict:
+    cfg = load_settings().get("ecard_images", {})
+    enabled_raw = os.getenv("ECARD_DALLE_ENABLED", cfg.get("enabled", "true"))
+    enabled = str(enabled_raw).lower() in ("1", "true", "yes", "on")
+    return {
+        "enabled": enabled,
+        "model": os.getenv("ECARD_DALLE_MODEL", cfg.get("model", "gpt-image-1-mini")),
+        "size": os.getenv("ECARD_DALLE_SIZE", cfg.get("size", "1024x1536")),
+        "quality": os.getenv("ECARD_DALLE_QUALITY", cfg.get("quality", "medium")),
+    }

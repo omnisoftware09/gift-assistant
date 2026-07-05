@@ -4,6 +4,7 @@ import os
 
 from src.agents.orchestrator.agent import handle_message, handle_slash_command
 from src.agents.subagents.profile_collector.import_handler import handle_slack_file_uploads
+from src.interfaces.slack.file_upload import deliver_response
 from src.interfaces.slack.formatters.responses import format_response
 from src.shared.conversation_context import SlackContext
 
@@ -19,17 +20,17 @@ IGNORED_MESSAGE_SUBTYPES = {
 
 def register_message_handlers(app: App) -> None:
     @app.event("app_mention")
-    def on_mention(event, say, logger):
+    def on_mention(event, say, client, logger):
         text = _strip_bot_mention(event.get("text", ""))
         context = _context_from_event(event)
         files = event.get("files") or []
         if files:
             _reply_files(say, logger, files, context, error_label="app_mention")
         if text:
-            _reply(say, logger, text, context, error_label="app_mention")
+            _reply(client, say, logger, text, context, error_label="app_mention")
 
     @app.event("message")
-    def on_dm(event, say, logger):
+    def on_dm(event, say, client, logger):
         if event.get("bot_id"):
             return
         subtype = event.get("subtype")
@@ -45,7 +46,7 @@ def register_message_handlers(app: App) -> None:
 
         text = (event.get("text") or "").strip()
         if text:
-            _reply(say, logger, text, context, error_label="DM")
+            _reply(client, say, logger, text, context, error_label="DM")
 
 
 def _reply_files(say, logger, files, context, error_label):
@@ -61,10 +62,18 @@ def _reply_files(say, logger, files, context, error_label):
         )
 
 
-def _reply(say, logger, text, context, error_label):
+def _reply(client, say, logger, text, context, error_label):
     try:
         response = handle_message(text, context)
-        say(**format_response(response), thread_ts=context.thread_ts)
+        if response.files:
+            deliver_response(
+                client,
+                context.channel_id,
+                response,
+                thread_ts=context.thread_ts,
+            )
+        else:
+            say(**format_response(response), thread_ts=context.thread_ts)
     except Exception:
         logger.exception("Failed to handle %s", error_label)
         say(text="Sorry, something went wrong.", thread_ts=context.thread_ts)

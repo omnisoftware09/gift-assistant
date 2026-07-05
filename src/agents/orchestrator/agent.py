@@ -9,7 +9,7 @@ from src.agents.orchestrator.router import detect_intent
 from src.agents.orchestrator.tools import load_recipient_context, set_recipient_age_range
 from src.agents.subagents.event_monitor.agent import handle_event_query
 from src.agents.subagents.event_monitor.parser import is_event_query
-from src.agents.subagents.ecard_generator.agent import handle_ecard_request
+from src.agents.subagents.ecard_generator.flow import handle_active_ecard_session, start_ecard_session
 from src.agents.subagents.ecard_generator.parser import is_ecard_request
 from src.agents.subagents.profile_collector.agent import handle_profile_message
 from src.agents.subagents.profile_collector.import_handler import is_profile_import_command
@@ -17,6 +17,7 @@ from src.agents.subagents.profile_collector.parser import is_profile_message
 from src.interfaces.slack.formatters.responses import welcome_blocks
 from src.langchain_core.observability import trace_agent
 from src.shared.conversation_context import AgentResponse, SlackContext
+from src.shared.ecard_session_store import get_ecard_session_store
 from src.shared.gift_session_store import get_gift_session_store
 
 logger = logging.getLogger("gift_assistant.orchestrator")
@@ -51,6 +52,10 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
     if session:
         return handle_active_gift_session(message, session, context)
 
+    ecard_session = get_ecard_session_store().get(context.user_id)
+    if ecard_session:
+        return handle_active_ecard_session(message, ecard_session, context)
+
     age_match = AGE_RANGE_PATTERN.search(message)
     if age_match:
         name = " ".join(age_match.group("name").split()).title()
@@ -59,6 +64,10 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
         return AgentResponse(
             text=f"Set age range for *{name}* to *{age_range}*. I'll use this for gift ideas."
         )
+
+    # eCard before gift/events — occasion words like "birthday" overlap with event triggers
+    if is_ecard_request(message) or detect_intent(message) == "ecard":
+        return start_ecard_session(message, context)
 
     gift_request = parse_gift_request(message)
     if gift_request:
@@ -79,9 +88,6 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
 
     if is_profile_message(message) or detect_intent(message) == "profile":
         return handle_profile_message(message, context)
-
-    if is_ecard_request(message) or detect_intent(message) == "ecard":
-        return handle_ecard_request(message, context)
 
     intent = detect_intent(message)
     return _response_for_intent(intent, message)
@@ -109,6 +115,16 @@ def handle_slash_command(
         query_text = query or "upcoming events"
         return handle_event_query(query_text)
 
+    if command == "ecard":
+        if not query:
+            return AgentResponse(
+                text='Usage: `/ecard Mom birthday` or `/ecard Sarah graduation`'
+            )
+        from src.agents.subagents.ecard_generator.flow import start_ecard_session
+
+        fake_message = f"create a greeting card for {query}"
+        return start_ecard_session(fake_message, context)
+
     return AgentResponse(text=f"Unknown command: /{command}")
 
 
@@ -128,7 +144,12 @@ def _response_for_intent(intent: str | None, message: str) -> AgentResponse:
         return handle_profile_message(message)
 
     if intent == "ecard":
-        return handle_ecard_request(message)
+        return AgentResponse(
+            text=(
+                "Create an eCard, e.g.\n"
+                "*create a greeting card for Mom for her birthday*"
+            )
+        )
 
     return AgentResponse(
         text=(

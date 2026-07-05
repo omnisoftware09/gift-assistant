@@ -88,6 +88,8 @@ These permissions let the bot read DMs, respond, and handle mentions.
 | `im:history` | Read DM history |
 | `im:read` | Access DM channels |
 | `im:write` | Open DM conversations |
+| `files:write` | Upload eCard JPEG/GIF files for download |
+| `files:read` | Read profile files users upload in DM |
 
 ### Step 2.6 — Enable Event Subscriptions
 

@@ -1,7 +1,19 @@
 """CRUD for recipient profiles and gift history."""
 
+from dataclasses import dataclass
+
 from src.storage.gift_history.db import get_connection, init_db
 from src.storage.models.recipient_context import PastGift, RecipientContext
+
+
+@dataclass
+class SavedEcard:
+    style: str
+    headline: str
+    message: str
+    sign_off: str | None
+    occasion: str | None
+    selected_at: str | None
 
 
 class GiftHistoryStore:
@@ -98,6 +110,63 @@ class GiftHistoryStore:
             )
             conn.commit()
             return int(cur.lastrowid)
+
+    def save_ecard(
+        self,
+        name: str,
+        style: str,
+        headline: str,
+        message: str,
+        sign_off: str | None = None,
+        occasion: str | None = None,
+    ) -> int:
+        recipient_id = self.get_or_create_recipient(name)
+        with get_connection() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ecards (recipient_id, style, headline, message, sign_off, occasion)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    recipient_id,
+                    style.strip().lower(),
+                    headline.strip(),
+                    message.strip(),
+                    sign_off,
+                    occasion,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def get_ecard_history(self, name: str, limit: int = 10) -> list[SavedEcard]:
+        clean = name.strip().title()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM recipients WHERE name = ? COLLATE NOCASE",
+                (clean,),
+            ).fetchone()
+            if not row:
+                return []
+            rows = conn.execute(
+                """
+                SELECT style, headline, message, sign_off, occasion, selected_at
+                FROM ecards WHERE recipient_id = ?
+                ORDER BY selected_at DESC LIMIT ?
+                """,
+                (row["id"], limit),
+            ).fetchall()
+        return [
+            SavedEcard(
+                style=r["style"],
+                headline=r["headline"],
+                message=r["message"],
+                sign_off=r["sign_off"],
+                occasion=r["occasion"],
+                selected_at=r["selected_at"],
+            )
+            for r in rows
+        ]
 
 
 _store: GiftHistoryStore | None = None

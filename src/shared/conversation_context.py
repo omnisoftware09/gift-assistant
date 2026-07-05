@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -10,6 +10,15 @@ class SlackContext:
 
 
 @dataclass
+class SlackFile:
+    data: bytes
+    filename: str
+    title: str = ""
+    initial_comment: str | None = None
+
+
+@dataclass
 class AgentResponse:
     text: str
     blocks: list | None = None
+    files: list[SlackFile] = field(default_factory=list)
