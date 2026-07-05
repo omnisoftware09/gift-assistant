@@ -1,8 +1,11 @@
 """Track which proactive alerts have been sent."""
 
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+
+logger = logging.getLogger("gift_assistant.notification_store")
 
 DEFAULT_STORE = Path("data/notified_events.json")
 
@@ -16,7 +19,15 @@ class NotificationStore:
     def _load(self) -> dict:
         if not self.path.exists():
             return {}
-        return json.loads(self.path.read_text())
+        raw = self.path.read_text().strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Invalid notification store at %s; starting fresh", self.path)
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _save(self) -> None:
         self.path.write_text(json.dumps(self._data, indent=2))

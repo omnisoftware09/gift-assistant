@@ -27,6 +27,15 @@ User feedback from previous round (incorporate in new ideas):
 """
 
 
+def web_search_block(web_results: str | None) -> str:
+    if not web_results or not web_results.strip():
+        return ""
+    return f"""
+Discovery search results (Exa — human-curated gift lists and articles; use for inspiration):
+{web_results.strip()}
+"""
+
+
 def search_prompt(
     recipient: str,
     occasion: str | None,
@@ -36,6 +45,7 @@ def search_prompt(
     past_gifts_summary: str = "",
     excluded_categories: list[str] | None = None,
     feedback: str | None = None,
+    web_results: str | None = None,
 ) -> str:
     occasion_line = occasion or "a general gift occasion"
     age_line = age_range or "not specified"
@@ -51,6 +61,7 @@ Known interests / profile:
 
 {past_gifts_block(past_gifts_summary, excluded)}
 {feedback_block(feedback)}
+{web_search_block(web_results)}
 RULES:
 - Do NOT recommend gifts in the same category as past gifts listed above.
 - Do NOT recommend gifts very similar in type to past gifts (e.g. another daypack if they got a backpack).

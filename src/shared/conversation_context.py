@@ -22,3 +22,5 @@ class AgentResponse:
     text: str
     blocks: list | None = None
     files: list[SlackFile] = field(default_factory=list)
+    unfurl_links: bool = True
+    unfurl_media: bool = True

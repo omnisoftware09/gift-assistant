@@ -3,7 +3,11 @@ from src.shared.conversation_context import AgentResponse
 
 def format_response(response: AgentResponse) -> dict:
     """Convert an AgentResponse into Slack message kwargs."""
-    kwargs = {"text": response.text}
+    kwargs = {
+        "text": response.text,
+        "unfurl_links": response.unfurl_links,
+        "unfurl_media": response.unfurl_media,
+    }
     if response.blocks:
         kwargs["blocks"] = response.blocks
     return kwargs

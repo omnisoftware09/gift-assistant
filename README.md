@@ -58,6 +58,7 @@ python scripts/auth_google_calendar.py
 | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | LangSmith tracing for all agents |
 | [docs/LLM_AND_PROFILES.md](docs/LLM_AND_PROFILES.md) | LLM providers, ChromaDB, chunking |
 | [docs/PROFILE_INGESTION.md](docs/PROFILE_INGESTION.md) | Import profiles from files + Slack |
+| [docs/PRODUCT_SEARCH.md](docs/PRODUCT_SEARCH.md) | MCP web search for gift ideas |
 
 ## Test the bot
 

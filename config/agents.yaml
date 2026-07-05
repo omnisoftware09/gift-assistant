@@ -20,7 +20,9 @@ profile_collector:
 gift_recommender:
   tools:
     - vector_db.query_profiles
-    - product_search.web_search
+    - product_search.discovery
+    - product_search.google_shopping
+    - product_search.amazon_rainforest
   skills:
     - search
     - evaluate

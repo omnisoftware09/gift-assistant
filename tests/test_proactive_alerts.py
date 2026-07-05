@@ -37,3 +37,17 @@ def test_notification_store(tmp_path):
     assert store.should_notify("evt2") is False
     store.mark_skipped("evt3")
     assert store.should_notify("evt3") is False
+
+
+def test_notification_store_empty_file(tmp_path):
+    path = tmp_path / "notified.json"
+    path.write_text("")
+    store = NotificationStore(path)
+    assert store.should_notify("evt1") is True
+
+
+def test_notification_store_invalid_json(tmp_path):
+    path = tmp_path / "notified.json"
+    path.write_text("{not json")
+    store = NotificationStore(path)
+    assert store.should_notify("evt1") is True

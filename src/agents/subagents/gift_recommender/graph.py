@@ -20,6 +20,9 @@ from src.agents.subagents.gift_recommender.scoring import (
 )
 from src.agents.subagents.gift_recommender.prompts import evaluate_prompt, search_prompt
 from src.langchain_core.llm import get_chat_model
+from src.tools.product_search.discovery import build_discovery_query, discover_gift_ideas
+from src.shared.integration_settings import is_discovery_enabled, is_verification_enabled
+from src.tools.product_search.retail import retail_fields_for_display, verify_gifts_retail
 from src.langchain_core.observability import trace_agent
 from src.storage.models.gift_request import GiftRequest
 
@@ -79,41 +82,63 @@ def _llm_json(prompt: str, *, node: str) -> list[dict]:
 
 @trace_agent("gift_recommender.search")
 def search_node(state: GiftGraphState) -> dict:
-    """Generate gift candidates from profile + occasion (LLM — no product API yet)."""
+    """Generate gift candidates from profile + occasion + optional MCP web search."""
     recipient = state["recipient"]
     occasion = state.get("occasion")
     profile_chunks = state.get("profile_chunks") or []
+    feedback = state.get("feedback")
+    web_results = ""
+    search_source = "LLM"
 
     logger.info(
-        "Gift search starting source=LLM recipient=%s occasion=%r iteration=%d profile_chunks=%d",
+        "Gift search starting recipient=%s occasion=%r iteration=%d profile_chunks=%d discovery=%s",
         recipient,
         occasion,
         state.get("iteration", 1),
         len(profile_chunks),
+        is_discovery_enabled(),
     )
-    if state.get("feedback"):
-        logger.info("Gift search user feedback=%r", state.get("feedback")[:200])
+    if feedback:
+        logger.info("Gift search user feedback=%r", feedback[:200])
     if state.get("excluded_categories"):
         logger.info(
             "Gift search excluded categories=%s",
             state.get("excluded_categories"),
         )
 
+    if is_discovery_enabled():
+        query = build_discovery_query(
+            recipient, occasion, profile_chunks, feedback
+        )
+        try:
+            web_results = discover_gift_ideas(query)
+            if web_results:
+                search_source = "Exa+LLM"
+                logger.info(
+                    "Gift discovery Exa results chars=%d query=%r",
+                    len(web_results),
+                    query[:200],
+                )
+        except Exception:
+            logger.exception("Gift discovery Exa MCP failed — continuing with LLM only")
+
     try:
+        prompt_kwargs = {**_prompt_kwargs(state), "web_results": web_results or None}
         raw = _llm_json(
-            search_prompt(recipient, occasion, profile_chunks, **_prompt_kwargs(state)),
+            search_prompt(recipient, occasion, profile_chunks, **prompt_kwargs),
             node="search",
         )
         candidates = normalize_candidates(raw)
         if not candidates:
             candidates = fallback_candidates(recipient, occasion)
-            status = "search: used fallback candidates (LLM returned no ideas)"
+            status = f"search: used fallback candidates ({search_source} returned no ideas)"
             logger.warning("Gift search used fallback candidates for recipient=%s", recipient)
         else:
-            status = f"search: found {len(candidates)} candidates (source=LLM)"
+            status = f"search: found {len(candidates)} candidates (source={search_source})"
             for idea in candidates:
                 logger.info(
-                    "Gift search candidate source=LLM recipient=%s title=%r category=%s price=%s",
+                    "Gift search candidate source=%s recipient=%s title=%r category=%s price=%s",
+                    search_source,
                     recipient,
                     idea.get("title"),
                     idea.get("category"),
@@ -240,15 +265,74 @@ def rank_node(state: GiftGraphState) -> dict:
     }
 
 
+@trace_agent("gift_recommender.verify")
+def verify_node(state: GiftGraphState) -> dict:
+    """Verification phase — Google Shopping + Amazon Rainforest MCP for top picks."""
+    ranked = list(state.get("ranked") or [])
+    if not ranked:
+        return {
+            "ranked": [],
+            "status": (state.get("status") or "") + " | verify: no ranked ideas",
+            "error": state.get("error") or "",
+        }
+
+    if not is_verification_enabled():
+        logger.info("Gift verify skipped — verification MCP disabled")
+        return {
+            "ranked": ranked,
+            "status": (state.get("status") or "") + " | verify: skipped (disabled)",
+            "error": state.get("error") or "",
+        }
+
+    from src.shared.integration_settings import get_shopping_pipeline_settings
+
+    settings = get_shopping_pipeline_settings()
+    top_n = settings["verify_top_n"]
+    recipient = state["recipient"]
+    verified: list[dict] = []
+
+    logger.info(
+        "Gift verify starting recipient=%s ideas=%d verify_top_n=%d",
+        recipient,
+        len(ranked),
+        top_n,
+    )
+
+    titles_to_verify = [idea["title"] for idea in ranked[:top_n]]
+    retail_results = verify_gifts_retail(titles_to_verify, recipient=recipient)
+
+    for index, idea in enumerate(ranked):
+        enriched = dict(idea)
+        if index < top_n and index < len(retail_results):
+            enriched.update(retail_fields_for_display(retail_results[index]))
+            logger.info(
+                "Gift verify #%d title=%r live_price=%r amazon_rating=%r",
+                index + 1,
+                idea.get("title"),
+                enriched.get("live_price"),
+                enriched.get("amazon_rating"),
+            )
+        verified.append(enriched)
+
+    return {
+        "ranked": verified,
+        "status": (state.get("status") or "")
+        + f" | verify: retail checks for top {min(top_n, len(ranked))}",
+        "error": state.get("error") or "",
+    }
+
+
 def build_gift_recommender_graph():
     graph = StateGraph(GiftGraphState)
     graph.add_node("search", search_node)
     graph.add_node("evaluate", evaluate_node)
     graph.add_node("rank", rank_node)
+    graph.add_node("verify", verify_node)
     graph.set_entry_point("search")
     graph.add_edge("search", "evaluate")
     graph.add_edge("evaluate", "rank")
-    graph.add_edge("rank", END)
+    graph.add_edge("rank", "verify")
+    graph.add_edge("verify", END)
     return graph.compile()
 
 
@@ -272,7 +356,7 @@ def run_gift_pipeline(
     feedback: str | None = None,
     iteration: int = 1,
 ) -> GiftGraphState:
-    """Run search → evaluate → rank."""
+    """Run search → evaluate → rank → verify."""
     logger.info(
         "Gift pipeline iteration=%d pattern=LangGraph-linear (not ReAct)",
         iteration,

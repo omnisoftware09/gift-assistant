@@ -31,6 +31,31 @@ AGE_RANGE_PATTERN = re.compile(
 GREETING_PATTERN = re.compile(r"\b(hello|hi|hey|help)\b", re.IGNORECASE)
 
 
+def _same_recipient(a: str, b: str) -> bool:
+    return a.strip().lower() == b.strip().lower()
+
+
+def _try_new_gift_for_different_recipient(
+    message: str,
+    session,
+    context: SlackContext,
+) -> AgentResponse | None:
+    """Start a fresh gift flow when user asks for someone other than the session recipient."""
+    new_request = parse_gift_request(message)
+    if not new_request or _same_recipient(new_request.recipient, session.recipient):
+        return None
+
+    logger.info(
+        "Gift session switching recipient %s -> %s for user=%s",
+        session.recipient,
+        new_request.recipient,
+        context.user_id,
+    )
+    get_gift_session_store().clear(context.user_id)
+    recipient_ctx = load_recipient_context(new_request.recipient)
+    return start_gift_session(new_request, context, recipient_ctx)
+
+
 @trace_agent("orchestrator")
 def handle_message(text: str, context: SlackContext) -> AgentResponse:
     """Process a user message and return a response for Slack."""
@@ -45,6 +70,9 @@ def handle_message(text: str, context: SlackContext) -> AgentResponse:
     # Active sessions before greeting detection ("something" contains "hi")
     session = get_gift_session_store().get(context.user_id)
     if session:
+        switched = _try_new_gift_for_different_recipient(message, session, context)
+        if switched:
+            return switched
         return handle_active_gift_session(message, session, context)
 
     ecard_session = get_ecard_session_store().get(context.user_id)
@@ -106,6 +134,9 @@ def handle_slash_command(
             )
         gift_request = parse_gift_request(query, from_slash_command=True)
         if gift_request:
+            existing = get_gift_session_store().get(context.user_id)
+            if existing:
+                get_gift_session_store().clear(context.user_id)
             recipient_ctx = load_recipient_context(gift_request.recipient)
             return start_gift_session(gift_request, context, recipient_ctx)
         return AgentResponse(

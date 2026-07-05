@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 from src.agents.subagents.gift_recommender.graph import run_gift_pipeline
 from src.agents.subagents.gift_recommender.prompts import GIFT_REFINEMENT_FOOTER
+from src.interfaces.slack.formatters.limits import (
+    SLACK_HEADER_TEXT_MAX,
+    SLACK_SECTION_TEXT_MAX,
+    truncate_slack_text,
+)
 from src.langchain_core.observability import trace_agent
 from src.shared.conversation_context import AgentResponse, SlackContext
 from src.storage.models.gift_request import GiftRequest
@@ -117,10 +122,24 @@ def run_gift_recommendation(
         f"{GIFT_REFINEMENT_FOOTER}"
     )
 
+    profile_block = truncate_slack_text(f"*Profile & history:*\n{profile_text}")
+    recommendation_blocks = _gift_recommendation_blocks(ranked)
+    status_line = truncate_slack_text(
+        f"Round {iteration} · search → evaluate → rank → verify · "
+        f"{pipeline.get('status', '')}",
+        max_len=500,
+    )
+
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"Gift ideas for {label}{iter_label}"},
+            "text": {
+                "type": "plain_text",
+                "text": truncate_slack_text(
+                    f"Gift ideas for {label}{iter_label}",
+                    max_len=SLACK_HEADER_TEXT_MAX,
+                ),
+            },
         },
         {
             "type": "section",
@@ -134,13 +153,10 @@ def run_gift_recommendation(
         },
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Profile & history:*\n{profile_text}"},
+            "text": {"type": "mrkdwn", "text": profile_block},
         },
         {"type": "divider"},
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Top recommendations:*\n{ideas_md}"},
-        },
+        *recommendation_blocks,
         {
             "type": "section",
             "text": {
@@ -153,19 +169,19 @@ def run_gift_recommendation(
         },
         {
             "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        f"Round {iteration} · search → evaluate → rank · "
-                        f"{pipeline.get('status', '')}"
-                    ),
-                }
-            ],
+            "elements": [{"type": "mrkdwn", "text": status_line}],
         },
     ]
 
-    return GiftRecommendResult(response=AgentResponse(text=text, blocks=blocks), ranked=ranked)
+    return GiftRecommendResult(
+        response=AgentResponse(
+            text=text,
+            blocks=blocks,
+            unfurl_links=False,
+            unfurl_media=False,
+        ),
+        ranked=ranked,
+    )
 
 
 def handle_gift_request(
@@ -188,23 +204,66 @@ def handle_gift_request(
     return result.response
 
 
-def _format_ideas_markdown(ranked: list[dict]) -> str:
-    lines = []
+def _format_single_idea_markdown(idea: dict, index: int) -> str:
+    title = idea.get("title", "Gift idea")
+    retail_bits: list[str] = []
+
+    price = idea.get("live_price") or idea.get("price_range")
+    if price and not str(price).startswith("(") and not str(price).startswith("{"):
+        retail_bits.append(str(price))
+
+    amazon_rating = idea.get("amazon_rating")
+    if amazon_rating is not None:
+        retail_bits.append(f"★{amazon_rating}")
+
+    retail_line = f" · {' · '.join(retail_bits)}" if retail_bits else ""
+    return f"*{index}. {title}*{retail_line}"
+
+
+def _amazon_detail_button(index: int, amazon_url: str) -> dict:
+    """Slack link button — opens Amazon product page in browser."""
+    return {
+        "type": "button",
+        "text": {"type": "plain_text", "text": "Amazon details", "emoji": True},
+        "url": amazon_url,
+        "action_id": f"gift_amazon_detail_{index}",
+    }
+
+
+def _gift_recommendation_blocks(ranked: list[dict]) -> list[dict]:
+    """One Slack section block per gift — avoids the 3000-char single-block limit."""
+    if not ranked:
+        return [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*Top recommendations:*\n_No ideas found._"},
+            }
+        ]
+
+    blocks: list[dict] = [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*Top recommendations:*"},
+        }
+    ]
     for i, idea in enumerate(ranked, start=1):
-        final = idea.get("final_score")
-        closeness = idea.get("closeness")
-        rating = idea.get("rating")
-        score_txt = ""
-        if isinstance(final, (int, float)):
-            score_txt = f" · score {final:.0f}"
-            if isinstance(closeness, (int, float)) and isinstance(rating, (int, float)):
-                score_txt += f" (closeness {closeness:.0f}, rating {rating:.0f})"
-        price = idea.get("price_range") or "varies"
-        reason = idea.get("reason") or ""
-        description = idea.get("description") or ""
-        lines.append(
-            f"*{i}. {idea['title']}* ({price}{score_txt})\n"
-            f"{description}\n"
-            f"_{reason}_"
-        )
+        section: dict = {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": truncate_slack_text(
+                    _format_single_idea_markdown(idea, i),
+                    max_len=SLACK_SECTION_TEXT_MAX,
+                ),
+            },
+        }
+        amazon_url = idea.get("amazon_url")
+        if amazon_url:
+            section["accessory"] = _amazon_detail_button(i, str(amazon_url))
+        blocks.append(section)
+    return blocks
+
+
+def _format_ideas_markdown(ranked: list[dict]) -> str:
+    lines = [_format_single_idea_markdown(idea, i) for i, idea in enumerate(ranked, start=1)]
     return "\n\n".join(lines)

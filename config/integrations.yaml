@@ -9,4 +9,42 @@ vector_db:
   provider: none  # pinecone | chroma | pgvector
 
 product_search:
-  provider: none  # web | amazon
+  enabled: false
+  pipeline:
+    discovery_enabled: true
+    verification_enabled: true
+    verify_top_n: 3
+  servers:
+    # Discovery phase — Exa MCP for creative gift list articles
+    exa:
+      enabled: true
+      transport: http
+      url: https://mcp.exa.ai/mcp
+      tool_name: web_search_exa
+      tool_argument_key: query
+      timeout_seconds: 45
+      headers: {}
+    # Verification phase — Google Shopping via SerpApi hosted MCP
+    google_shopping:
+      enabled: true
+      transport: http
+      url: https://mcp.serpapi.com/{SERPAPI_KEY}/mcp
+      tool_name: search
+      timeout_seconds: 45
+      arguments:
+        params:
+          engine: google_shopping
+          q: "{query}"
+          google_domain: google.com
+        mode: compact
+    # Verification phase — Amazon via local Rainforest MCP wrapper (stdio)
+    amazon_rainforest:
+      enabled: true
+      transport: stdio
+      command: python
+      args:
+        - scripts/mcp_rainforest_server.py
+      tool_name: amazon_product_search
+      tool_argument_key: search_term
+      timeout_seconds: 45
+      env: {}
