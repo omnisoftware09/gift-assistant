@@ -59,6 +59,9 @@ python scripts/auth_google_calendar.py
 | [docs/LLM_AND_PROFILES.md](docs/LLM_AND_PROFILES.md) | LLM providers, ChromaDB, chunking |
 | [docs/PROFILE_INGESTION.md](docs/PROFILE_INGESTION.md) | Import profiles from files + Slack |
 | [docs/PRODUCT_SEARCH.md](docs/PRODUCT_SEARCH.md) | MCP web search for gift ideas |
+| [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) | Full system design (demo depth) |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | How we tested and assessed the system |
+| [docs/DEMO_SLIDE_CONTENT.md](docs/DEMO_SLIDE_CONTENT.md) | Google Slides copy + speaker notes |
 
 ## Test the bot
 
